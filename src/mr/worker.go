@@ -1,7 +1,6 @@
 package mr
 
 import (
-	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
@@ -11,7 +10,6 @@ import (
 	"os"
 	"sort"
 	"strconv"
-	"time"
 )
 
 type ByKey []KeyValue
@@ -54,17 +52,18 @@ func Worker(mapf func(string, string) []KeyValue,
 
 	// Your worker implementation here.
 	uuid = genUUID()
-	// registerWorker(uuid) // 没用上
+	registerWorker(uuid)
 	for true {
-		task := getTask()
+		task := getTask(uuid)
 		switch task.TaskType {
 		case Map:
 			doMapWork(&task, mapf)
 		case Reduce:
 			doReduceWork(&task, reducef)
-		case AllTasksDone:
-			// fmt.Println("All tasks are done...")
-			break
+		case TurnOff:
+			// fmt.Printf("Turn off command... %v\n", uuid)
+			deactiveWorker(uuid)
+			return
 		}
 	}
 
@@ -72,30 +71,42 @@ func Worker(mapf func(string, string) []KeyValue,
 	// CallExample()
 }
 
+func deactiveWorker(uuid string) {
+	args := RpcWorkerStatusArgs{uuid}
+	reply := RpcWorkerStatusReply{}
+
+	response := call("Coordinator.DeactiveWorkerHandler", &args, &reply)
+	if !response {
+		log.Println("Stop due to call error when call Coordinator.DeactiveWorkerHandler...")
+		os.Exit(0)
+	}
+}
+
 func registerWorker(uuid string) {
-	args := RpcRegisterWorkerArgs{}
+	args := RpcWorkerStatusArgs{}
 	args.Uuid = uuid
 
-	reply := RpcRegisterWorkerReply{}
+	reply := RpcWorkerStatusReply{}
 	response := call("Coordinator.RegisterWorkerHandler", &args, &reply)
 	if !response {
-		fmt.Println("Stop due to call error when call Coordinator.RegisterWorkerHandler...")
+		log.Println("Stop due to call error when call Coordinator.RegisterWorkerHandler...")
 		os.Exit(0)
 	}
 }
 
 func genUUID() string {
-	// generate 32 bits timestamp
-	unix32bits := uint32(time.Now().UTC().Unix())
+	// // generate 32 bits timestamp
+	// unix32bits := uint32(time.Now().UTC().Unix())
 
-	buff := make([]byte, 12)
+	// buff := make([]byte, 12)
 
-	numRead, err := rand.Read(buff)
+	// numRead, err := rand.Read(buff)
 
-	if numRead != len(buff) || err != nil {
-		panic(err)
-	}
-	return fmt.Sprintf("%x-%x-%x-%x-%x-%x", unix32bits, buff[0:2], buff[2:4], buff[4:6], buff[6:8], buff[8:])
+	// if numRead != len(buff) || err != nil {
+	// 	panic(err)
+	// }
+	// return fmt.Sprintf("%x-%x-%x-%x-%x-%x", unix32bits, buff[0:2], buff[2:4], buff[4:6], buff[6:8], buff[8:])
+	return strconv.Itoa(os.Getpid())
 }
 
 func doReduceWork(task *TaskRpcReply, reducef func(string, []string) string) {
@@ -164,7 +175,7 @@ func notifyCoordinatorTaskDone(taskType TaskType, taskDoneInfo string) {
 	reply := RpcTaskDoneReply{}
 	response := call("Coordinator.TaskDoneHandler", &args, &reply)
 	if !response {
-		fmt.Println("Stop due to call error when call Coordinator.TaskDoneHandler...")
+		log.Println("Stop due to call error when call Coordinator.TaskDoneHandler...")
 		os.Exit(0)
 	}
 }
@@ -177,7 +188,7 @@ func syncIntermediateFileWithCoordinator(intermediateFileName string, reduceIdx 
 	reply := IntermediateFileReply{}
 
 	if !call("Coordinator.IntermediateFileHandler", &args, &reply) {
-		fmt.Println("Stop due to call error when call Coordinator.IntermediateFileHandler...")
+		log.Println("Stop due to call error when call Coordinator.IntermediateFileHandler...")
 		os.Exit(0)
 	}
 }
@@ -213,12 +224,12 @@ func Partition(keyValuePairArr []KeyValue, nReduce int, task *TaskRpcReply) [][]
 	return keyValuePair
 }
 
-func getTask() TaskRpcReply {
-	args := TaskRpcArgs{}
+func getTask(uuid string) TaskRpcReply {
+	args := TaskRpcArgs{uuid}
 	reply := TaskRpcReply{}
 
 	if !call("Coordinator.TaskHandler", &args, &reply) {
-		fmt.Println("Stop due to call error when call Coordinator.TaskHandler...")
+		log.Printf("Stop due to call error when call Coordinator.TaskHandler...\t%v\n", uuid)
 		os.Exit(0)
 	}
 
@@ -267,6 +278,6 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 		return true
 	}
 
-	fmt.Println(err)
+	log.Println(err)
 	return false
 }

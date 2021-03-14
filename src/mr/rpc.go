@@ -30,10 +30,11 @@ type TaskType int
 const (
 	Map TaskType = iota
 	Reduce
-	AllTasksDone
+	TurnOff
 )
 
 type TaskRpcArgs struct {
+	Uuid string
 }
 
 type TaskRpcReply struct {
@@ -63,11 +64,11 @@ type RpcTaskDoneReply struct {
 	Msg string
 }
 
-type RpcRegisterWorkerArgs struct {
+type RpcWorkerStatusArgs struct {
 	Uuid string
 }
 
-type RpcRegisterWorkerReply struct {
+type RpcWorkerStatusReply struct {
 }
 
 // Cook up a unique-ish UNIX-domain socket name
